@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous" defer></script>
+    <title>Document</title>
+</head>
+<body style="margin: 10px;">
+    <h1 style="text-align: center;"> Driver App</h1>
+    <label for="" style="margin-top: 20px;"><b>Notification:</b></label>
+    <div style="border: 1px solid lightgray; min-height: 60vh;" id="notification-container">
+    
+    </div>
+</body>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+    const names = ['Roberta Williams', 'Steve Wozniak', 'Paul Allen', 'Greenblatt']
+    const driverName = names[Math.floor(Math.random() * 4)]
+    console.log(`user name: ${driverName}`);
+    const idKey = `${driverName.split(' ')[0]}${Math.floor(Math.random() * 1000)}`
+
+    const socket = io('https://transit-dq94.onrender.com', {
+        query: {
+            name: driverName,
+            user_type: 'driver',
+            id: localStorage.getItem(idKey)
+        }
+    })
+
+    socket.on('driverCreated', (data) => {
+        console.log('driverCreated');
+        localStorage.setItem(idKey, data.driver.id)
+    })
+
+    // When an order is Requested
+    socket.on('orderRequested', (data) => {
+        const notificationContainer = document.getElementById('notification-container')
+        console.log(data);
+
+        const div = document.createElement('div')
+        div.classList.add('mb-3')
+
+        const date = new Date().toLocaleTimeString()
+
+        div.innerHTML = `
+            <div styles="margin: 10px;" class="card" id="${data.order.id}">
+                <h5 class="card-header"> Ride Session </h5>
+                <div class="card-body ${data.order.sender.name.split(' ')[0]}">
+                    <div class="d-flex justify-content-between">
+                        <h5 class="card-title">${data.order.sender.name} is requesting a ride</h5>
+                        <p>${date[1] == ':' ? date.slice(0, 4) : date.slice(0, 5)} ${date.slice(-2)}</p>
+                    </div>
+                    <p class="card-text">Current Location: ${data.order.current_location}</p>
+                    <p class="card-text">Destination: ${data.order.destination}</p>
+                    <p class="card-text">Price: ${data.order.price}</p>
+                    <button id="${data.order.id}-accept-order" href="#" class="btn btn-primary">Accept</button>
+                    <button id="${data.order.id}-reject-order" href="#" class="btn btn-danger">Reject</button>
+                </div>
+            </div>
+        `
+        notificationContainer.appendChild(div)
+
+        const acceptOrderButton = document.getElementById(`${data.order.id}-accept-order`)
+        const rejectOrderButton = document.getElementById(`${data.order.id}-reject-order`)
+
+        acceptOrderButton.addEventListener('click', () => {
+            console.log(`id: ${JSON.stringify(data)}, driverid: ${idKey}`);
+            socket.emit('acceptOrder', {id: data.order.id, driverId: localStorage.getItem(idKey)})
+        })
+        
+        rejectOrderButton.addEventListener('click', () => {
+            console.log(`id: ${JSON.stringify(data)}, driverid: ${idKey}`);
+            socket.emit('rejectOrder', {id: data.order.id, driverId: localStorage.getItem(idKey)})
+        })
+    })
+
+    // When an Order is Accepted
+    socket.on('orderAccepted', (data) => {
+        console.log(`accept clicked: ${JSON.stringify(data)}`);
+        const acceptOrderButton = document.getElementById(`${data.order.id}-accept-order`)
+        const rejectOrderButton = document.getElementById(`${data.order.id}-reject-order`)
+
+        if (acceptOrderButton){
+            acceptOrderButton.innerHTML = 'Accepted'
+            acceptOrderButton.disabled = true
+        }
+
+        if (rejectOrderButton){
+            rejectOrderButton.style.display = 'none'
+            // rejectOrderButton.innerHTML = 'Finish Ride'
+            // rejectOrderButton.style.backgroundColor = 'green'
+        }
+
+        // Add a finish ride button
+        const cardBody = document.getElementsByClassName(`${data.order.sender.name.split(' ')[0]}`)
+
+        const finishButton = document.createElement('button')
+        finishButton.setAttribute('id', `${data.order.id}-finish-ride`)
+        finishButton.setAttribute('class', "btn btn-success")
+        finishButton.textContent = 'Finish'
+
+        acceptOrderButton.parentElement.insertBefore(finishButton, acceptOrderButton.nextElementSibling)        
+
+        // Event if finished ride
+        finishButton.addEventListener('click', () => {
+            socket.emit('finishRide', {id: data.order.id, driverId: localStorage.getItem(idKey)})
+        })
+    })
+
+    // When an Order is Rejected
+    socket.on('orderRejected', (data) => {
+        const acceptOrderButton = document.getElementById(`${data.order.id}-accept-order`)
+        const rejectOrderButton = document.getElementById(`${data.order.id}-reject-order`)
+
+        if (acceptOrderButton){
+            acceptOrderButton.disabled = true
+        }
+        
+        if (rejectOrderButton){
+            rejectOrderButton.innerHTML = 'Rejected'
+            rejectOrderButton.disabled = true
+        }
+    })
+
+    // When an Order Expires
+    socket.on('driverNotFound', (data) => {
+        const notificationContainer = document.getElementById('notification-container')
+
+        console.log(notificationContainer.firstElementChild.children[0].children[0].textContent);
+        console.log(notificationContainer.children);
+        const notificationChildren = notificationContainer.children
+        for (const child of notificationChildren) {
+            console.log(child.children[0].id, `${data.order.id}`);
+            if (data.order.status === 'pending' && child.children[0].id === `${data.order.id}`){
+                console.log(child);
+                child.style.display = 'none'
+            }
+        }
+
+        console.log(notificationContainer);
+    })
+
+
+    // Finishing A Ride Session
+    socket.on('finishRide', (data) => {
+        const notificationContainer = document.getElementById('notification-container')
+        console.log(data);
+
+        const div = document.createElement('div')
+        div.classList.add('mb-3')
+
+        const date = new Date().toLocaleTimeString()
+
+        div.innerHTML = `
+            <div styles="margin: 10px;" class="card">
+                <h5 class="card-header"> Ride Session </h5>
+                <div class="card-body ${data.order.sender.name.split(' ')[0]}">
+                    <div class="d-flex justify-content-between">
+                        <h5 class="card-title">${data.order.sender.name}: Ride Session Completed</h5>
+                        <p>${date[1] == ':' ? date.slice(0, 4) : date.slice(0, 5)} ${date.slice(-2)}</p>
+                    </div>
+                    <p class="card-text">Current Location: ${data.order.current_location}</p>
+                    <p class="card-text">Destination: ${data.order.destination}</p>
+                    <p class="card-text">Price: ${data.order.price}</p>
+                    
+                </div>
+            </div>
+        `
+        notificationContainer.appendChild(div)
+
+        // Remove the buttons
+        const acceptOrderButton = document.getElementById(`${data.order.id}-accept-order`)
+        const finishButton = document.getElementById(`${data.order.id}-finish-ride`)
+        console.log(`finish Button: ${finishButton}`);
+
+        if (acceptOrderButton){
+            acceptOrderButton.style.display = 'none'
+        }
+
+        if (finishButton){
+            finishButton.style.display = 'none'
+        }
+    })
+
+    // If another driver has accepted
+    socket.on('didNotAccept', (data) => {
+        
+        const acceptOrderButton = document.getElementById(`${data.order.id}-accept-order`)
+        const rejectOrderButton = document.getElementById(`${data.order.id}-reject-order`)
+
+
+        // Add "Order already accepted by another driver"
+        const notificationContainer = document.getElementById('notification-container')
+
+        const notificationChildren = notificationContainer.children
+
+        for (const child of notificationChildren) {
+            if (child.children[0].id === `${data.order.id}`){
+                acceptOrderButton.parentElement.children[0].children[0].textContent = `${data.order.sender.name}: This order has already been accepted by another driver`
+            }
+        }
+
+        // Remove the Buttons from display
+        if (acceptOrderButton){
+            acceptOrderButton.style.display = 'none'
+        }
+
+        if (rejectOrderButton){
+            rejectOrderButton.style.display = 'none'
+        }
+    })
+</script>
+</html>

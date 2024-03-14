@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous" defer></script>
+    <title>Document</title>
+</head>
+<body style="margin: 10px;">
+    <h1 style="text-align: center;"> Sender App</h1>
+    <form id="request-form" action="">
+        <div class="input-group mb-3">
+            <span class="input-group-text" id="inputGroup-sizing-default">Location</span>
+            <input type="text" class="form-control" value="lagos">
+        </div>
+        <div class="input-group mb-3">
+            <span class="input-group-text" id="inputGroup-sizing-default">Destination</span>
+            <input type="text" class="form-control" value="ibadan">
+        </div>
+        <div class="input-group mb-3">
+            <span class="input-group-text" id="inputGroup-sizing-default">Price</span>
+            <input type="number" class="form-control" value="100">
+        </div>
+        <button type="submit" class="btn btn-primary" id="requestBtn">request</button>
+    </form>
+    <label for="" style="margin-top: 20px;"><b>Notification:</b></label>
+    <div style="border: 1px solid lightgray; min-height: 60vh;" id="notification-container">
+    
+    </div>
+</body>
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const names = ['Ken Williams', 'Steve Jobs', 'Bill Gates', 'Larry Page']
+    const senderName = names[Math.floor(Math.random() * 4)]
+    console.log(`user name: ${senderName}`);
+    const idKey = `${senderName.split(' ')[0]}${Math.floor(Math.random() * 1000)}`
+
+    const socket = io('https://transit-dq94.onrender.com',{
+        query: {
+            name: senderName,
+            user_type: 'sender',
+            id: localStorage.getItem(idKey)
+        }
+    })
+    
+    socket.on('senderCreated', (data) => {
+        console.log(`${data.sender.name} ==> ${data.sender.id}`);
+        localStorage.setItem(idKey, data.sender.id)
+    })
+
+    const requestForm = document.getElementById('request-form')
+
+    requestForm.addEventListener('submit', (e) => {
+        e.preventDefault()
+        const location = e.target[0].value
+        const destination = e.target[1].value
+        const price = e.target[2].value
+
+        const requestOrderButton = document.getElementById('requestBtn')
+
+        requestOrderButton.innerHTML = 'sent'
+        requestOrderButton.classList.add('disabled')
+
+        console.log('submit clicked');
+        socket.emit('requestOrder', {current_location: location, destination, price, id: localStorage.getItem(idKey)})
+    })
+
+    socket.on('orderAccepted', (data) => {
+        const notificationContainer = document.getElementById('notification-container')
+
+        const div = document.createElement('div')
+        div.classList.add('mb-3')
+
+        const date = new Date().toLocaleTimeString()
+
+        div.innerHTML = `
+            <div styles="margin: 10px;" class="card">
+                <h5 class="card-header"> Order Request </h5>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <h5 class="card-title">Driver ${data.order.driver.name} has Accepted your ride</h5>
+                        <p>${date[1] == ':' ? date.slice(0, 4) : date.slice(0, 5)} ${date.slice(-2)}</p>
+                    </div>
+                    <p class="card-text">Current Location: ${data.order.current_location}</p>
+                    <p class="card-text">Destination: ${data.order.destination}</p>
+                    <p class="card-text">Price: ${data.order.price}</p>
+                </div>
+            </div>
+        `
+        notificationContainer.appendChild(div)
+    })
+
+    socket.on('orderRejected', (data) => {
+        console.log({data});
+
+        const notificationContainer = document.getElementById('notification-container')
+
+        const div = document.createElement('div')
+        div.classList.add('mb-3')
+
+        const date = new Date().toLocaleTimeString()
+
+        div.innerHTML = `
+            <div styles="margin: 10px;" class="card">
+                <h5 class="card-header"> Order Request </h5>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <h5 class="card-title">Driver ${data.order.driver.name} has rejected your ride</h5>
+                        <p>${date[1] == ':' ? date.slice(0, 4) : date.slice(0, 5)} ${date.slice(-2)}</p>
+                    </div>
+                    <p class="card-text">Current Location: ${data.order.current_location}</p>
+                    <p class="card-text">Destination: ${data.order.destination}</p>
+                    <p class="card-text">Price: ${data.order.price}</p>
+                </div>
+            </div>
+        `
+        notificationContainer.appendChild(div)
+
+    })
+
+    socket.on('driverNotFound', (data) => {
+        const notificationContainer = document.getElementById('notification-container')
+
+        const div = document.createElement('div')
+        div.classList.add('mb-3')
+
+        const date = new Date().toLocaleTimeString()
+
+        div.innerHTML = `
+            <div styles="margin: 10px;" class="card">
+                <h5 class="card-header"> Order Request </h5>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <h5 class="card-title">Your order has timedout. <i>No driver found<i></h5>
+                        <p>${date[1] == ':' ? date.slice(0, 4) : date.slice(0, 5)} ${date.slice(-2)}</p>
+                    </div>
+                    <p class="card-text">Current Location: ${data.order.current_location}</p>
+                    <p class="card-text">Destination: ${data.order.destination}</p>
+                    <p class="card-text">Price: ${data.order.price}</p>
+                </div>
+            </div>
+        `
+        notificationContainer.appendChild(div)
+
+        const requestOrderButton = document.getElementById('requestBtn')
+
+        requestOrderButton.innerHTML = 'request'
+        requestOrderButton.classList.remove('disabled')
+    })
+
+    socket.on('finishRide', (data) => {
+        const notificationContainer = document.getElementById('notification-container')
+
+        const div = document.createElement('div')
+        div.classList.add('mb-3')
+
+        const date = new Date().toLocaleTimeString()
+
+        div.innerHTML = `
+            <div styles="margin: 10px;" class="card">
+                <h5 class="card-header"> Order Request </h5>
+                <div class="card-body">    
+                    <div class="d-flex justify-content-between">
+                        <h5 class="card-title">Ride session Ended. <i>Hope you had a nice ride</i></h5>
+                        <p>${date[1] == ':' ? date.slice(0, 4) : date.slice(0, 5)} ${date.slice(-2)}</p>
+                    </div>
+                    <p class="card-text">Current Location: ${data.order.current_location}</p>
+                    <p class="card-text">Destination: ${data.order.destination}</p>
+                    <p class="card-text">Price: ${data.order.price}</p>
+                </div>
+            </div>
+        `
+        notificationContainer.appendChild(div)
+
+        const requestOrderButton = document.getElementById('requestBtn')
+
+        requestOrderButton.innerHTML = 'request'
+        requestOrderButton.classList.remove('disabled')
+    })
+</script>
+</html>
